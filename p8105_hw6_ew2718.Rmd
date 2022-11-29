@@ -7,7 +7,6 @@ output: html_document
 
 ```{r}
 library(tidyverse)
-
 ```
 
 ##Problem 2
@@ -34,7 +33,24 @@ my_homicide_df = homicide_data %>%
 For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
 
 ```{r}
+baltimore_reg = my_homicide_df %>%
+  filter(
+    city_state == "Baltimore,MD"
+  ) %>% 
+  mutate(
+    victim_sex = fct_relevel(victim_sex, "Male"))
 
+fit_model_baltimore = baltimore_reg %>%
+  glm(solved_status ~ victim_age + victim_sex + victim_race, data = ., family = binomial())
+
+baltimore_model_stats_sex = fit_model_baltimore %>% 
+  broom::tidy() %>%
+  mutate(
+    OR = exp(estimate),
+    lower_ci = exp(estimate - 1.96*std.error), 
+    upper_ci = exp(estimate + 1.96*std.error)) %>%
+  select(term, estimate, OR, lower_ci, upper_ci) %>% 
+  filter(term == "victim_sexFemale")
 ```
 
 Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
