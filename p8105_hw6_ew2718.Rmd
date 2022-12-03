@@ -5,9 +5,10 @@ date: "2022-11-28"
 output: html_document
 ---
 
-```{r}
+```{r setup, include = FALSE}
 library(tidyverse)
 library(modelr)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ##Problem 2
@@ -102,12 +103,41 @@ In this problem, you will analyze data gathered to understand the effects of sev
 Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
 ```{r}
-birthweight_data = read_csv("data/birthweight.csv")
+birthweight_data = read_csv("./data/birthweight.csv")
+
+birthweight_data %>% 
+  mutate(
+    babysex = as.factor(babysex),
+    frace = as.factor(frace),
+    malform = as.factor(malform),
+    mrace = as.factor(mrace))
 ```
 
 Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
 
+I'm going to construct a model with `bwt` (continuous, pounds) as the outcome.  My primary expose will be `parity` or the number of previous babies a mother has had.  I chose this because it's hypothesized that birth weight will increase with birth order.  I will include 3 additional predictors: `wtgain`(pounds), `momage`(mom age at delivery, years), and `fincome`(family monthly income, in hundreds, rounded).  These predictors are all hypothesized to contribute to birth weight in different ways.  Mothers who gain a sufficient amount of weight during pregnancy are less likely to have a baby of low birth weight.  Pregnancy also becomes higher risk as a mother ages, which can lead to lower birth weight.  Finally, income correlates to having the resources for better prenatal care and birth outcomes.          
+
 ```{r}
+birthweight_data %>% 
+  mutate(
+    bwt = bwt*0.00220462
+  )
+
+my_model_birthweight = lm(bwt ~ parity + wtgain + momage + fincome, data = birthweight_data)
+
+my_model_plot = birthweight_data %>% 
+  add_residuals(my_model_birthweight, var = "residuals") %>% 
+  add_predictions(my_model_birthweight, var = "fitted_values") %>% 
+  ggplot(aes(x = fitted_values, y = residuals)) + 
+  geom_point() + 
+  geom_smooth(method = lm, formula = y~x)
+  labs(
+    title = "Plot: Residuals Against Fitted Values for My Model",
+    x = "fitted values",
+    y = "residuals"
+  )
+
+my_model_plot
 
 ```
 
@@ -115,12 +145,41 @@ Compare your model to two others:
 
 One using length at birth and gestational age as predictors (main effects only). 
 
-One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+One using head circumference, length, sex, and all interactions (including the three-way interaction) between these.
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
 ```{r}
+length_age_model = lm(bwt ~ blength + gaweeks, data = birthweight_data)
 
+interaction_model = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birthweight_data)
+
+compare_models = 
+  crossv_mc(birthweight_data, 100) %>% 
+  mutate(
+    train = map(train, as_tibble), 
+    test = map(test, as_tibble)
+  ) %>% 
+  mutate(
+    model_1 = map(train, ~lm(bwt ~ parity + wtgain + momage + fincome, data = .x)), 
+    model_2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    model_3 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data =.x))
+  ) %>% 
+  mutate(
+    rmse_model1 = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+    rmse_model2 = map2_dbl(model_2, test, ~rmse(model = .x, data = .y)),
+    rmse_model3 = map2_dbl(model_3, test, ~rmse(model = .x, data = .y)))
+
+compare_models %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
+Model 3, or the model with the interaction values is the best fit of these options.  My model (model 1) is by far the worst.  
 
 
