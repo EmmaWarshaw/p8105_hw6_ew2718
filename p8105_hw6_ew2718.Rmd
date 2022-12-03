@@ -7,6 +7,7 @@ output: html_document
 
 ```{r}
 library(tidyverse)
+library(modelr)
 ```
 
 ##Problem 2
@@ -51,19 +52,48 @@ baltimore_model_stats_sex = fit_model_baltimore %>%
     upper_ci = exp(estimate + 1.96*std.error)) %>%
   select(term, estimate, OR, lower_ci, upper_ci) %>% 
   filter(term == "victim_sexFemale")
+
+baltimore_model_stats_sex %>% 
+  knitr::kable(digits = 3)
+
+save(baltimore_model_stats_sex, file = "balitmore_model_stats_sex")
 ```
 
 Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 
 ```{r}
-
+homicide_all = 
+  my_homicide_df %>%
+  nest(data = -city_state) %>% 
+  mutate(model = map(data, ~glm(solved_status ~ victim_age + victim_sex + victim_race, data = .x, family = binomial())),
+         results = map(model, broom::tidy)) %>% 
+  select(-data, -model) %>% 
+  unnest(results) %>% 
+  filter(term == "victim_sexMale") %>% 
+  select(city_state, term, estimate, std.error) %>% 
+  mutate(
+    odds_ratio = exp(estimate),
+    low_conf = exp(estimate - 1.96*std.error),
+    upper_conf = exp(estimate + 1.96*std.error)) %>% 
+  select(-estimate, -std.error)
 ```
 
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
 
 ```{r}
-
+homicide_all %>% 
+  mutate(city_state = fct_reorder(city_state, odds_ratio)) %>% 
+  ggplot(aes(x = city_state, y = odds_ratio)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = low_conf, ymax = upper_conf), width = 0.4) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90)) +
+  labs(
+    x = "City, State",
+    y = "Odds Ratios"
+  )
 ```
+
+This plot shows the odds that a crime is solved for male victims compared to female victims.  For a city like New York, the odds of an solved crime for males is significantly lower than for female victims.  At the same time, for the cities that appear to have higher odds ratios, like Albuquerque, the confidence interval also crosses the null value of 1, meaning that gender isn't necessarily a good predictor of the outcome in these cities.  For the cities with significant odds ratios (i.e. don't cross the null value), the odds of a solved crime are generally lower for males when compared to females.      
 
 ##Problem 3
 
